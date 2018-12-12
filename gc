@@ -1,0 +1,111 @@
+#!/bin/bash
+
+field() {
+    delim='[ \t\n]+'
+
+    while [ $# -gt 0 ]; do opt="$1"; case "$opt" in
+        -d) {
+            delim="$2"
+            shift
+            shift
+        }
+        ;;
+
+        *) break;
+    esac; done
+
+    field="$1"
+    awk -F "$delim" '{print $'$field'}'
+}
+
+
+gitfolder="$MYGIT"
+
+function add_upstream() {
+    url=$(git config --get remote.origin.url)
+    repo=${url##*/}
+    user=$(echo "$url" | awk -F/ '{print $4}')
+    echo "https://api.github.com/repos/$user/$repo" 1>&2
+    remote=$(curl -s "https://api.github.com/repos/$user/$repo" | jq -r '.parent.clone_url')
+    if [ "$remote" != "null" ]; then
+        git remote add upstream "$remote"
+    else
+        echo "no upstream found"
+    fi
+}
+
+pl() {
+    printf -- "%s\n" "$@"
+    return 0
+}
+
+stdin_exists() {
+    ! [ -t 0 ]
+}
+
+is_tty() {
+    [[ -t 1 ]]
+}
+
+is_tty && drop_to_shell=y
+
+while [ $# -gt 0 ]; do opt="$1"; case "$opt" in
+    -notty) {
+        drop_to_shell=n
+        shift
+    }
+    ;;
+
+    *) break;
+esac; done
+
+{
+    if stdin_exists; then
+        input="$(cat)"
+        printf -- "%s\n" "$input"
+    fi
+
+    echo "$@"
+} | awk 1 | sed 's/#.*//' | while IFS=$'\n' read -r line; do
+    domain=github.org # default
+
+    re='(github|gitlab|bitbucket|gopkg).(com|org|in)'
+    slashed="$(echo "$re" | sed 's=\([/|()]\)=\\\1=g')"
+
+    if printf -- "%s\n" "$line" | grep -q -P "$re"; then
+        domain="$(printf -- "%s\n" "$line" | sed -n "s_^[a-z]\\+://[w.]*$slashed.*_\\1.\\2_p")"
+        author="$(printf -- "%s\n" "$line" | sed -n "s_^[a-z]\\+://[w.]*$slashed/\\([^/]\+\\).*_\\3_p")"
+        repo="$(printf -- "%s\n" "$line" | sed -n "s_^[a-z]\\+://[w.]*$slashed/[^/]\\+/\\([^/]\\+\\).*_\\3_p" | sed 's/\.git$//')"
+    elif printf -- "%s\n" "$line" | grep -q -P '[^/]+/[^/]'; then
+        author="$(pl "$line" | field -d / 1)"
+        repo="$(pl "$line" | field -d /  2)"
+    else
+        author="$(pl "$line" | field 1)"
+        repo="$(pl "$line" | field 2)"
+    fi
+
+    if [ -n "$author" ] && [ -n "$repo" ]; then
+        cd "$MYGIT"
+
+        mkdir -p "$author"
+        cd "$author"
+
+        url="https://$domain/$author/$repo"
+        pl "Cloning $url" 1>&2
+
+        vc g cl "$url" 
+
+        repdir="$(pwd)/$repo"
+        printf -- "%s\n" "$repdir"
+    fi
+done | {
+    lastclonedrepo="$(tail -n 1)"
+
+    if ! test -d "$lastclonedrepo"; then
+        pl "repo not created" 1>&2
+    else
+        ( cd "$lastclonedrepo"; add_upstream 1>&2; )
+    fi
+
+    printf -- "%s\n" "$lastclonedrepo"
+}

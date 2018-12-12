@@ -1,0 +1,274 @@
+#!/bin/bash
+export TTY
+
+pl() {
+    printf -- "%s\n" "$@"
+    return 0
+}
+
+p() {
+    for (( i = 1; i < $#; i++ )); do
+        eval ARG=\${$i}
+        printf -- "%s " "$ARG"
+    done
+    eval ARG=\${$i}
+    printf -- "%s" "$ARG"
+}
+
+read -r -d '' default_pipeline <<HEREDOC
+https://github.com/Luxurioust/aurora	4910	EG CRC	server error -- error while processing x1
+https://github.com/apcera/kurma	11228	CRC	server error -- error while processing x1
+https://github.com/exercism/xgo	28760	EG CRC	server error -- error while processing x1
+https://github.com/prometheus/haproxy_exporter	1107	CRC	server error -- error while processing x1
+https://github.com/tmc/pqstream	1405	EG CRC	server error -- error while processing x1
+https://github.com/status-im/status-go	35563	EG CRC	server error -- transport closing x1
+https://github.com/sendgrid/sendgrid-go	11683	CRC	server error -- error while processing x1
+https://github.com/kubernetes-sigs/kubeadm-dind-cluster	0	CRC	can't find .go files
+https://github.com/weaveworks/mesh	8087	CRC	server error -- error while processing x1
+https://github.com/prometheus/mysqld_exporter	7038	CRC	all-funcs (t=30s)
+https://github.com/libopenstorage/openstorage	60688	CRC	server error -- error while processing x1
+https://github.com/kubernetes/ingress-nginx	33379	CRC	server error x1
+https://github.com/Azure/acs-engine	59125	EG CRC	server error x1
+https://github.com/vmware/govmomi	260265	CRC	server error -- error while processing x1
+https://github.com/kubicorn/kubicorn	15827	CRC	server error -- transport closing x1
+https://github.com/oklog/ulid	1512	CRC	server error x1
+https://github.com/s3git/s3git	1210	CRC	server error x1
+https://github.com/ReactiveX/RxGo	3625	CRC	timeout after 1 hour (x1). server error after 49 min (x1)
+https://github.com/prometheus/alertmanager	37046	CRC	server error x1
+https://github.com/prometheus/node_exporter	13786	CRC	server error x1
+https://github.com/google/grumpy	26601	CRC	server error x2
+https://github.com/go-swagger/go-swagger	103523	EG CRC	timeout x1 - 1 hour - retry
+https://github.com/git-lfs/git-lfs	44653	CRC	server error x1
+https://github.com/bosun-monitor/bosun	87692	CRC	server error x1
+https://github.com/fnproject/fn	545059	CRC	server error x1
+https://github.com/valyala/quicktemplate	5849	EG	server error x1
+https://github.com/grpc-ecosystem/grpc-gateway	28056	EG CRC	server error x1
+https://github.com/hashicorp/packer	135906	EG	all-funcs (t=5min)
+https://github.com/EtixLabs/cameradar	2805	EG	server error x1
+https://github.com/360EntSecGroup-Skylar/goreporter	141619	EG CRC	timeout x1 - 1 hour - retry
+https://github.com/revel/revel	17419	CRC	timeout x1 - 1 hour - retry
+https://github.com/docker/swarmkit	527456	EG CRC	timeout x1 - retry
+https://github.com/OpenGenus/cosmos	5385	EG CRC	server error -- error while processing x1
+https://github.com/rkt/rkt	69448	EG CRC	server error x1 - all-funcs
+https://github.com/HewlettPackard/docker-machine-oneview	897	EG CRC	Reuben: server error
+https://github.com/docker/docker	245310	EG CRC	server error on 'package' tenet
+https://github.com/gophercloud/gophercloud	113631	EG	Reuben: no issues found on arbitrary
+https://github.com/astaxie/build-web-application-with-golang	2979	CRC	server error
+https://github.com/pingcap/tidb	188511	CRC	server error after 2 min x3
+https://github.com/ibuildthecloud/k3s	550836	CRC EG Landmines	gateway timeout
+https://github.com/mit-pdos/biscuit	1238486	EG	server error
+https://github.com/istio/istio	283184	EG	server error after 2 min
+https://github.com/syncthing/syncthing	64826	EG CRC	still running after 25 mins
+https://github.com/golang/go	1495263	EG	server error
+https://github.com/juju/juju	744597	Juju	timed out waiting for issue
+https://github.com/cockroachdb/cockroach	656339	CRC	server error
+https://github.com/kubernetes/kubernetes	1304535	kubernetes	server error
+https://github.com/v2ray/v2ray-core	41565	EG	server error -- error while processing x1
+https://github.com/mattermost/mattermost-server	175821	EG: https://docs.mattermost.com/developer/style-guide.html	server error
+https://github.com/moby/moby	238854	CRC EG	server error after 2 min
+https://github.com/minio/minio	104971	CRC EG	packages
+https://github.com/etcd-io/etcd	171899	CRC	server error on find-funcs
+HEREDOC
+printf -- "%s" "$default_pipeline" > /tmp/default-pipeline.yaml
+
+
+read -r -d '' eg_clyl <<HEREDOC
+tenets:
+  - import: codelingo/effective-go
+HEREDOC
+printf -- "%s" "$eg_clyl" > /tmp/eg.yaml
+
+
+read -r -d '' crc_clyl <<HEREDOC
+tenets:
+  - import: codelingo/code-review-comments
+HEREDOC
+printf -- "%s" "$eg_clyl" > /tmp/crc.yaml
+
+
+read -r -d '' basic_clyl <<HEREDOC
+tenets:
+  - name: find-funcs-all
+    flows:
+      codelingo/review:
+        comment: This is a function, but you probably already knew that.
+    query: |
+      import codelingo/ast/go
+      go.file(depth = any):
+        go.decls:
+          @review comment
+          go.func_decl
+HEREDOC
+printf -- "%s" "$basic_clyl" > /tmp/basic.yaml
+
+
+tee /tmp/eg-w.yaml &>/dev/null < <(curl -s "https://raw.githubusercontent.com/codelingo/codelingo/master/tenets/codelingo/effective-go/comment-first-word-as-subject/codelingo.yaml")
+tee /tmp/crc-w.yaml &>/dev/null < <(curl -s "https://raw.githubusercontent.com/codelingo/codelingo/master/tenets/codelingo/code-review-comments/go-error-fmt/codelingo.yaml")
+
+
+remove_vendor() {
+    # Remove common vendor directories
+    find . -type d \( -name 'vendor' -o -name 'Godeps' -o -name '_override' \) \
+        -exec rm -rf {} \; ;
+
+    # Remove protobuff go files (not sure if this is really necessary)
+    find . -type f \( -name '*.pb.go' \) -exec rm {} \; ;
+
+    git add -A .
+    git commit -m "rm vendor"
+
+    return 0
+}
+
+
+while [ $# -gt 0 ]; do opt="$1"; case "$opt" in
+    -pl) {
+        PIPELINE_DATA_FILE="$2"
+        shift
+        shift
+    }
+    ;;
+
+    -j) {
+        PARALLEL_JOBS="$2"
+        shift
+        shift
+    }
+    ;;
+
+    -rd) {
+        RESULTS_REPO_DIR="$2"
+        shift
+        shift
+    }
+    ;;
+
+    *) break;
+esac; done
+
+: ${PARALLEL_JOBS:="1"}
+: ${RESULTS_REPO_DIR:="$HOME/source/git/mullikine/tenets"}
+bundle_success_dir="$RESULTS_REPO_DIR/bundles/success"
+tenet_success_dir="$RESULTS_REPO_DIR/tenets/success"
+: ${PIPELINE_DATA_FILE:="/tmp/default-pipeline.yaml"}
+
+# Given these, try to check out each of them and test lingo on them.
+# $HOME/notes2018/ws/codelingo/pipeline/batch-test.tsv
+
+if ! [ -d "$RESULTS_REPO_DIR" ]; then
+    echo "Results dir ($PIPELINE_DATA_FILE) does not exist." 1>&2
+    exit 1
+fi
+
+mkdir -p "$bundle_success_dir"
+mkdir -p "tenet_success_dir"
+
+if ! [ -n "$PIPELINE_DATA_FILE" ]; then
+    echo "Pipeline data file path not specified." 1>&2
+    exit 1
+fi
+
+if ! [ -f "$PIPELINE_DATA_FILE" ]; then
+    echo "Pipeline data file path ($PIPELINE_DATA_FILE) does not exist." 1>&2
+    exit 1
+fi
+
+single_test() {
+    line="$1"
+
+    url="$(p "$line" | cut -d '	' -f 1)"
+    loc="$(p "$line" | cut -d '	' -f 2)"
+    bundles="$(p "$line" | cut -d '	' -f 3)"
+    dir="$(gc -notty "$url" 2>/dev/null 0</dev/null)"
+
+    if [ -d "$dir" ]; then
+        pwd | 1>&2
+
+        cd "$dir"
+
+        if ! is-git; then
+            echo not git 1>&2
+            continue
+        fi
+
+        if ! test "$(vc get-top-level)" = "$(realpath "$(pwd)")"; then
+            echo not git top 1>&2
+            continue
+        fi
+
+        git add -A .
+        git reset --hard HEAD
+
+        branch_name="$(vc branch)"
+
+        test -z "$branch_name" && continue
+
+        git checkout "$branch_name"
+        git reset --hard "origin/$branch_name"
+        git pull --rebase origin "$branch_name"
+
+        remove_vendor
+
+        git remote remove codelingo
+
+        # Can't use lingo wrapper in batch script. Too many interactive
+        # things
+
+        basic_fp="$tenet_success_dir/$(dirslug)-basic.json"
+        $HOME/go/bin/lingo run review --lingo-file /tmp/basic.yaml --keep-all --output "$basic_fp"
+
+        if ! test -f "$basic_fp"; then
+            echo basic tenet failed 1>&2
+            continue
+        fi
+
+        if pl "$bundles" | grep -q -P 'EG'; then
+            fn="$(dirslug)-eg.json"
+            fp="$bundle_success_dir/$fn"
+
+            $HOME/go/bin/lingo run review --lingo-file /tmp/eg.yaml --keep-all --output "$fp"
+
+            if [ -f "$fp" ]; then
+                $HOME/go/bin/lingo run rewrite --lingo-file "/tmp/eg-w.yaml" --keep-all
+            fi
+
+        else
+            fn="$(dirslug)-crc.json"
+            fp="$bundle_success_dir/$fn"
+
+            $HOME/go/bin/lingo run review --lingo-file /tmp/crc.yaml --keep-all --output "$fp"
+
+            if [ -f "fp" ]; then
+                $HOME/go/bin/lingo run rewrite --lingo-file "/tmp/crc-w.yaml" --keep-all
+            fi
+        fi
+    fi
+    return 0
+}
+
+sleep_test() {
+    sleep 2
+    return 0
+}
+
+cat "$PIPELINE_DATA_FILE" | \
+awk '{ print ; system("")}' | while IFS=$'\n' read -r line; do
+    n_jobs="$PARALLEL_JOBS"
+
+    printf 'thread %d: %s\n' 1 "$line"
+    single_test "$line" &
+
+    for (( i = $n_jobs; i > 1; i-- )); do
+        IFS=$'\n' read -r line
+        if ! [ -n "$line" ]; then
+            exit 0
+        fi
+
+        printf 'thread %d: %s\n' "$i" "$line"
+
+        # sleep_test &
+        single_test "$line" &
+    done
+
+    wait
+done
